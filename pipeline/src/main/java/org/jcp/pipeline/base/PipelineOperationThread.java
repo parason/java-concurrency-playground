@@ -1,20 +1,25 @@
 package org.jcp.pipeline.base;
 
-public class PipelineOperationThread {
+/**
+ *  to be put into {@link ThreadLocal}
+ *
+ * @param <T> supported entity type
+ */
+public class PipelineOperationThread<T> {
 
     private Operation<?> currentOperation;
 
-    public <T> PipelineOperationThread(final Operation<T> entry) {
+    public PipelineOperationThread(final Operation<T> entry) {
         reset(entry);
     }
 
-    public <T> Operation<?> put(final Operation<T> operation) {
+    public Operation<?> put(final Operation<T> operation) {
         final Operation<?> previousOperation = currentOperation;
         currentOperation = operation;
         return previousOperation;
     }
 
-    public <T> void reset(Operation<T> operation) {
+    public void reset(Operation<T> operation) {
         currentOperation = operation;
     }
 

@@ -2,6 +2,11 @@ package org.jcp.pipeline.base;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * An aggregate that contains the counters for held and postponed jobs as well as number of queued postponed jobs
+ * (required for cleanup before the shutdown).
+ *
+ */
 class ExecutionStatistics {
     private final AtomicLong held;
     private final AtomicLong postponed;
