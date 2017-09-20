@@ -1,66 +1,88 @@
 package org.jcp.pipeline.base;
 
-import java.util.HashSet;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.LockSupport;
-
 import org.jcp.pipeline.base.exception.PipelineErrorHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class Pipeline {
+import java.util.LinkedList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
+
+public class Pipeline<T> {
 
     private static final Logger LOG = LoggerFactory.getLogger(Pipeline.class);
 
-    private static final int DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 60;
+    public static final int DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 60;
 
     private final ThreadLocal<PipelineOperationThread> pipelineOperationThreadThreadLocal;
-    private final HashSet<Operation<?>>                operations;
-    private final Semaphore                            semaphore;
-    private final PipelineErrorHandler                 pipelineErrorHandler;
-    private final ExecutionStatistics                  executionStatistics;
-
+    private final LinkedList<Operation<T>> operations;
+    private final Semaphore semaphore;
+    private final PipelineErrorHandler pipelineErrorHandler;
+    private final Executor executor;
     private final int shutdownTimeout;
+    private final AtomicLong onHold;
+    private final AtomicLong startedPipelineFlows;
 
     private boolean shutdownFlag = false;
 
-    Pipeline() {
-        this(DEFAULT_SHUTDOWN_TIMEOUT_SECONDS);
-    }
-
-    Pipeline(final int shutdownTimeout) {
-        this((e, operation, parameter) -> {
-            throw new RuntimeException("Error performing operation: " + operation + " with parameter " + parameter, e);
-        }, shutdownTimeout);
-    }
-
-    Pipeline(final PipelineErrorHandler pipelineErrorHandler, final int shutdownTimeout) {
+    public Pipeline(final Executor executor,
+                    final PipelineErrorHandler pipelineErrorHandler,
+                    final int shutdownTimeout) {
         this.pipelineOperationThreadThreadLocal = new ThreadLocal<>();
-        this.operations = new HashSet<>();
+        this.operations = new LinkedList<>();
         this.semaphore = new Semaphore(1);
         this.pipelineErrorHandler = pipelineErrorHandler;
-        this.executionStatistics = new ExecutionStatistics();
         this.shutdownTimeout = shutdownTimeout;
+        this.executor = executor;
+        this.onHold = new AtomicLong(0);
+        this.startedPipelineFlows = new AtomicLong(0);
     }
 
-    <T> void addOperation(final Operation<T> operation) {
+    void addOperation(final Operation<T> operation) {
+        assert operation != null;
         operations.add(operation);
     }
 
-    public <T> void executeOperation(final Operation<T> operation, final T parameter) {
+    public void setEntryOperation(final Operation<T> operation) {
+        assert operation != null;
+        operations.add(operation);
+    }
+
+    public void start(final T parameter) {
         if (shutdownFlag) {
             throw new IllegalStateException("process instance shutdown");
         }
-        startThread(operation);
+
+        final Operation<T> first = operations.getLast();
+
+        startedPipelineFlows.incrementAndGet();
+
+        executor.execute(() -> {
+            startThread(first);
+            try {
+                doExecute(first, parameter);
+            } finally {
+                decrementStarted();
+                finishThread();
+            }
+        });
+    }
+
+    private void decrementStarted() {
         try {
-            execute(operation, parameter);
+            semaphore.acquire();
+            startedPipelineFlows.decrementAndGet();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         } finally {
-            finishThread();
+            semaphore.release();
         }
     }
 
-    private <T> void execute(final Operation<T> operation, final T parameter) {
+    private void doExecute(final Operation<T> operation, final T parameter) {
         final PipelineOperationThread pipelineOperationThread = pipelineOperationThreadThreadLocal.get();
         if (pipelineOperationThread == null) {
             throw new IllegalArgumentException("This method is not allowed to be called outside of a Pipeline thread.");
@@ -76,7 +98,7 @@ public class Pipeline {
         }
     }
 
-    <T> void startThread(Operation<T> operation) {
+    private void startThread(Operation<T> operation) {
         final PipelineOperationThread existing = pipelineOperationThreadThreadLocal.get();
         if (existing != null) {
             throw new IllegalStateException("The thread has already been started: " + existing);
@@ -89,108 +111,40 @@ public class Pipeline {
         pipelineOperationThreadThreadLocal.remove();
     }
 
-    void proceed() {
-        resumePostponed();
-        finishThread();
-    }
-
-    public void resumePostponed() {
-        try {
-            semaphore.acquire();
-            executionStatistics.decrementPostponed();
-        } catch (final InterruptedException e) {
-            throw new RuntimeException(e);
-        } finally {
-            semaphore.release();
-        }
-    }
-
-    public void resumeHeld() {
-        executionStatistics.decrementHeld();
-    }
-
-    public void postpone() {
-        try {
-            semaphore.acquire();
-            executionStatistics.incrementPostponed();
-        } catch (final InterruptedException e) {
-            throw new RuntimeException(e);
-        } finally {
-            semaphore.release();
-        }
-    }
-
     public void hold() {
         try {
             semaphore.acquire();
-            executionStatistics.incrementHeld();
-        } catch (final InterruptedException e) {
+            onHold.incrementAndGet();
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         } finally {
             semaphore.release();
         }
+    }
+
+    public void resume() {
+        onHold.decrementAndGet();
     }
 
     public void shutdown() {
-        LOG.info("Shutdown requested. Will try to finish all postponed and held operations till the deadline of {} seconds starting from now", shutdownTimeout);
-        this.shutdownFlag = true;
-        finish();
-    }
-
-    public void finish() {
-        final long timeout = shutdownTimeout * 1000 + System.currentTimeMillis();
-        while (executionStatistics.getHeld() > 0 || executionStatistics.getPostponed() > 0) {
-            if (Thread.currentThread().isInterrupted()) {
-                LOG.warn("Shutdown was interrupted");
-                break;
-            }
-            if (System.currentTimeMillis() >= timeout) {
-                LOG.warn("Shutdown timeout has been reached");
-                break;
-            }
-            finishHeld(timeout);
-            finishPostponed(timeout);
-        }
-    }
-
-    private void finishHeld(final long timeout) {
-        while (executionStatistics.getHeld() > 0) {
-            if (System.currentTimeMillis() >= timeout) {
-                LOG.warn("Shutdown timeout has been reached. Finishing held operations was not completed.");
-                break;
-            }
-            try {
-                operations.forEach(op -> {
-                    startThread(op);
-                    try {
-                        op.cleanup();
-                    } catch (RuntimeException e) {
-                        LOG.error("Cleanup failed", e);
-                        pipelineErrorHandler.handle(e, op, null);
-                    }
-                });
-            } finally {
-                finishThread();
-            }
-        }
-    }
-
-    private void finishPostponed(final long timeout) {
-        try {
-            semaphore.acquire();
-            executionStatistics.incrementPostponeQueue();
-            while (executionStatistics.getHeld() > 0 || executionStatistics.getPostponed() > 0) {
-                if (System.currentTimeMillis() >= timeout) {
-                    LOG.warn("Shutdown timeout has been reached. Finishing postponed operations was not completed.");
-                    break;
+        LOG.info("Shutdown is called, will terminate all remaining operations with the deadline of {} sec.", shutdownTimeout);
+        shutdownFlag = true;
+        final long timeout = System.currentTimeMillis() + shutdownTimeout * 1000;
+        while (onHold.get() > 0 && System.currentTimeMillis() <= timeout) {
+            for (Operation<T> op : operations) {
+                startThread(op);
+                try {
+                    op.cleanup();
+                } catch (RuntimeException e) {
+                    pipelineErrorHandler.handle(e, op, null);
+                } finally {
+                    finishThread();
                 }
+            }
+            // wait for the started flows to finish
+            if (startedPipelineFlows.get() > 0) {
                 LockSupport.parkNanos(TimeUnit.SECONDS.toNanos(1));
             }
-            executionStatistics.decrementPostponeQueue();
-        } catch (final InterruptedException e) {
-            throw new RuntimeException(e);
-        } finally {
-            semaphore.release();
         }
     }
 }

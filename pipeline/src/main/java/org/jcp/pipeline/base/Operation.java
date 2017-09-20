@@ -2,25 +2,24 @@ package org.jcp.pipeline.base;
 
 /**
  * Base pipeline process chunk. The implementations perform a (set of) instructions and pass the processed object to
- * the next step. The very first operation should (but does not have to) be an {@link EntryOperation} that will fire the
- * pipeline process by passing the created pipeline to an {@link java.util.concurrent.Executor}
+ * the next step.
  *
  * @param <T> the supported type of the object that will be processed.
  */
 public abstract class Operation<T> {
 
-    private final Pipeline     pipelineReference;
+    private final Pipeline<T> pipelineReference;
     private final Operation<T> nextOperationReference;
 
     /**
      * Default constructor, accepts the main pipeline reference and the next operation to be executed.
      *
-     * @param pipeline reference to the main pipeline process
+     * @param pipeline               reference to the main pipeline process
      * @param nextOperationReference reference to the operation that has to be performed right after the current
      *                               operation is executed
      */
-    protected Operation(final Pipeline pipeline,
-            final Operation<T> nextOperationReference) {
+    protected Operation(final Pipeline<T> pipeline,
+                        final Operation<T> nextOperationReference) {
         this.pipelineReference = pipeline;
         pipeline.addOperation(this);
 
@@ -32,7 +31,7 @@ public abstract class Operation<T> {
      *
      * @param value the object to be processed
      */
-    public void perform(final T value) {
+    void perform(final T value) {
         doPerform(value);
         if (nextOperationReference != null) {
             nextOperationReference.perform(value);
@@ -58,6 +57,7 @@ public abstract class Operation<T> {
 
     /**
      * Next operation reference getter
+     *
      * @return the next operation reference
      */
     Operation<T> getNextOperation() {

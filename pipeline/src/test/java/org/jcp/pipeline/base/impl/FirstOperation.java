@@ -10,7 +10,7 @@ public class FirstOperation extends Operation<TestEntity> {
 
     private static final Logger LOG = LoggerFactory.getLogger(FirstOperation.class);
 
-    public FirstOperation(Pipeline pipeline, Operation<TestEntity> nextOperationReference) {
+    public FirstOperation(Pipeline<TestEntity> pipeline, Operation<TestEntity> nextOperationReference) {
         super(pipeline, nextOperationReference);
     }
 

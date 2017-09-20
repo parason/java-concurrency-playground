@@ -59,6 +59,6 @@ public class JoinOperation extends Operation<TestEntity> {
 
     private void commit() {
         testEntities.clear();
-        getPipelineReference().resumeHeld();
+        getPipelineReference().resume();
     }
 }

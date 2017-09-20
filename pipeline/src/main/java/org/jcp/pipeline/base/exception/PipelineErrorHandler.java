@@ -10,7 +10,8 @@ public interface PipelineErrorHandler {
 
     /**
      * Performs the handling
-     * @param e exception that ha been thrown during an operation
+     *
+     * @param e         exception that ha been thrown during an operation
      * @param operation the operation
      * @param parameter the operations parameter
      */
