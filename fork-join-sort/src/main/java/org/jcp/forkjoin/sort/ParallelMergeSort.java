@@ -2,6 +2,10 @@ package org.jcp.forkjoin.sort;
 
 import java.util.List;
 
+/**
+ * https://en.wikipedia.org/wiki/Merge_sort#Parallel_merge_sort
+ * https://docs.oracle.com/javase/tutorial/essential/concurrency/forkjoin.html
+ */
 public class ParallelMergeSort {
 
     public static <T> List<T> sort(final List<T> list) {
