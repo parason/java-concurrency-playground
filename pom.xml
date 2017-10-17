@@ -12,6 +12,7 @@
     <modules>
         <module>producer-consumer</module>
         <module>pipeline</module>
+        <module>fork-join-sort</module>
     </modules>
 
     <properties>
