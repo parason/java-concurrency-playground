@@ -56,15 +56,6 @@ public abstract class Operation<T> {
     }
 
     /**
-     * Next operation reference getter
-     *
-     * @return the next operation reference
-     */
-    Operation<T> getNextOperation() {
-        return nextOperationReference;
-    }
-
-    /**
      * Performs cleanup after if required.
      */
     public abstract void cleanup();

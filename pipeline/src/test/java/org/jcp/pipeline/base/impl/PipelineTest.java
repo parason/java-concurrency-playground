@@ -49,13 +49,27 @@ public class PipelineTest {
         final List<TestEntity> testEntities = new ArrayList<>();
 
         for (int i = 0; i < 100; i++) {
-            final TestEntity testEntity = new TestEntity(i, UUID.randomUUID().toString());
-            testEntities.add(testEntity);
-            LOG.info("Scheduling entity {}", testEntity);
-            pipeline.start(testEntity);
+            testEntities.add(new TestEntity(i, UUID.randomUUID().toString()));
         }
 
+        long start = System.currentTimeMillis();
+
+        testEntities.forEach(pipeline::start);
         pipeline.shutdown();
+
+        long end = System.currentTimeMillis();
+
+        LOG.info("Pipeline processing took {} ms", end - start);
+
+        testEntities.forEach(te -> Assert.assertEquals(3, te.getUpdateCount()));
+
+        long startSync = System.currentTimeMillis();
+
+        testEntities.forEach(TestEntity::incrementCount);
+
+        long endSync = System.currentTimeMillis();
+
+        LOG.info("Sync processing took {} ms", endSync - startSync);
 
         testEntities.forEach(te -> Assert.assertEquals(3, te.getUpdateCount()));
     }

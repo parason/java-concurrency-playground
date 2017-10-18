@@ -4,17 +4,17 @@ class PipelineOperationThread {
 
     private Operation currentOperation;
 
-    <T> PipelineOperationThread(final Operation<T> entry) {
+    PipelineOperationThread(final Operation entry) {
         reset(entry);
     }
 
-    <T> Operation<T> put(final Operation<T> operation) {
-        final Operation<T> previousOperation = currentOperation;
+    Operation put(final Operation operation) {
+        final Operation previousOperation = currentOperation;
         currentOperation = operation;
         return previousOperation;
     }
 
-    <T> void reset(Operation<T> operation) {
+    void reset(Operation operation) {
         currentOperation = operation;
     }
 
